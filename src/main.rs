@@ -2,6 +2,8 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use uuid::Uuid;
+use chrono::Utc;
+use solana_client::rpc_client::RpcClient;
 
 const AI_MODELS: [&str; 10] = [
     "GPT-3.5 (text-davinci-003)",
@@ -33,7 +35,9 @@ struct Block {
     transaction: Transaction,
     consensus: bool,
     details: String,
+    solana_block: u64, // Add this field
 }
+
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ConsensusResult {
@@ -72,7 +76,8 @@ struct ApiError {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Welcome to the Agent Consensus CLI!");
+    
+    print_banner(); // Print the ASCII art
 
     loop {
         println!("Enter a transaction message (or 'exit' to quit):");
@@ -222,26 +227,68 @@ fn form_consensus(agent_responses: &[bool]) -> ConsensusResult {
     }
 }
 
+
 async fn validate_and_add_to_chain(
     transaction: &Transaction,
     agent_responses: Vec<bool>,
 ) -> Result<Block, Box<dyn std::error::Error>> {
+    // Solana RPC client
+    let rpc_client = RpcClient::new("https://api.mainnet-beta.solana.com");
+
+    // Fetch the current block height
+    let current_block = match rpc_client.get_slot() {
+        Ok(block) => block,
+        Err(err) => {
+            eprintln!("Error fetching Solana block: {}", err);
+            0 // Default block number if an error occurs
+        }
+    };
+
+    // Record agent responses
     let mut details = String::new();
     for (i, response) in agent_responses.iter().enumerate() {
         let vote = if *response { "yes" } else { "no" };
-        let model_name = AI_MODELS[i % AI_MODELS.len()];
-        details.push_str(&format!("Agent {} ({}): {}\n", i + 1, model_name, vote));
+        details.push_str(&format!("Agent {}: {}\n", i + 1, vote));
     }
 
-    details.push_str("Block added to ledger.\n");
+    // Add timestamp and block height
+    let timestamp = Utc::now();
+    details.push_str(&format!(
+        "\nThis block was added to Solana at block {} on {}.\n",
+        current_block, timestamp
+    ));
 
+    // Create the block
     let block = Block {
         id: Uuid::new_v4().to_string(),
         transaction: transaction.clone(),
         consensus: true,
         details,
+        solana_block: current_block,
     };
 
+    
+    print_banner(); // Print the ASCII art
+
+    // Add block to the ledger
     LEDGER.lock().unwrap().push(block.clone());
     Ok(block)
+}
+
+fn print_banner() {
+    
+    println!("");
+    println!("");
+    println!(
+        r#"
+  _______ _____  _    _ _______ _    _ 
+ |__   __|  __ \| |  | |__   __| |  | |
+    | |  | |__) | |  | |  | |  | |__| |
+    | |  |  _  /| |  | |  | |  |  __  |
+    | |  | | \ \| |__| |  | |  | |  | |
+    |_|  |_|  \_\\____/   |_|  |_|  |_|"#,
+    );
+    
+    println!("\n\n");
+    println!("Welcome to the TRUTH chain!\n\n");
 }
