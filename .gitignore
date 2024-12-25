@@ -1,0 +1,35 @@
+# Compiled source files
+/target/
+
+# Build scripts output
+**/*.rs.bk
+
+# Executables
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Intermediate files
+*.obj
+*.o
+
+# Cargo package manager specific
+Cargo.lock
+/.cargo/
+
+# Generated files
+*.log
+*.tmp
+
+# IDE and editor specific
+.idea/
+/.vscode/
+/*.iml
+*.swp
+*.swo
+*.swn
+
+# System files
+.DS_Store
+Thumbs.db
