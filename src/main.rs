@@ -3,7 +3,14 @@ use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use uuid::Uuid;
 use chrono::Utc;
+use std::io::Write;
+
 use solana_client::rpc_client::RpcClient;
+
+const COLOR_GREEN: &str = "\x1B[32m"; // Green text
+const COLOR_RED: &str = "\x1B[31m";   // Red text
+const COLOR_RESET: &str = "\x1B[0m";  // Reset to default text color
+
 
 const AI_MODELS: [&str; 10] = [
     "GPT-3.5 (text-davinci-003)",
@@ -77,10 +84,12 @@ struct ApiError {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
+    clear_screen(); // Clear the screen
     print_banner(); // Print the ASCII art
 
     loop {
-        println!("Enter a transaction message (or 'exit' to quit):");
+        prompt_text();
+
         let mut input = String::new();
         std::io::stdin().read_line(&mut input)?;
         let input = input.trim().to_string();
@@ -127,7 +136,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn display_ledger() {
-    println!("\n=== Current Ledger ===");
+    println!("\n=== Current Ledger ===\n");
     let ledger = LEDGER.lock().unwrap();
     for (i, block) in ledger.iter().enumerate() {
         println!(
@@ -146,12 +155,12 @@ async fn validate_transaction(
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let model_name = AI_MODELS[agent_id % AI_MODELS.len()];
     println!(
-        "Agent {} ({}) validating transaction: {:?}",
+        "Agent {} ({}) validating transaction: {:?}\n",
         agent_id, model_name, transaction
     );
 
     let prompt = format!(
-        "Agent {} ({}) is validating the following transaction: '{}'. Is it valid? Respond with 'yes' or 'no'.",
+        "Agent {} ({}) is validating the following transaction: '{}'. Is it valid? Respond with 'yes' or 'no'.\n",
         agent_id, model_name, transaction.content
     );
 
@@ -244,12 +253,18 @@ async fn validate_and_add_to_chain(
         }
     };
 
-    // Record agent responses
+    // Record agent responses and their associated models
     let mut details = String::new();
     for (i, response) in agent_responses.iter().enumerate() {
-        let vote = if *response { "yes" } else { "no" };
-        details.push_str(&format!("Agent {}: {}\n", i + 1, vote));
+        let vote = if *response {
+            format!("{}yes{}", COLOR_GREEN, COLOR_RESET) // Green for yes
+        } else {
+            format!("{}no{}", COLOR_RED, COLOR_RESET)   // Red for no
+        };
+        let model_name = AI_MODELS[i % AI_MODELS.len()]; // Assign model name
+        details.push_str(&format!("Agent {} ({}) voted: {}\n", i + 1, model_name, vote));
     }
+    
 
     // Add timestamp and block height
     let timestamp = Utc::now();
@@ -267,18 +282,20 @@ async fn validate_and_add_to_chain(
         solana_block: current_block,
     };
 
-    
-    print_banner(); // Print the ASCII art
-
     // Add block to the ledger
     LEDGER.lock().unwrap().push(block.clone());
     Ok(block)
 }
 
+fn clear_screen() {
+    print!("\x1B[2J\x1B[1;1H"); // ANSI escape code to clear the screen
+    std::io::stdout().flush().unwrap(); // Flush the output to ensure it is displayed immediately
+}
+
+
 fn print_banner() {
-    
-    println!("");
-    println!("");
+    println!();
+    println!();
     println!(
         r#"
   _______ _____  _    _ _______ _    _ 
@@ -286,9 +303,22 @@ fn print_banner() {
     | |  | |__) | |  | |  | |  | |__| |
     | |  |  _  /| |  | |  | |  |  __  |
     | |  | | \ \| |__| |  | |  | |  | |
-    |_|  |_|  \_\\____/   |_|  |_|  |_|"#,
+    |_|  |_|  \_\\____/   |_|  |_|  |_|"#
     );
-    
-    println!("\n\n");
-    println!("Welcome to the TRUTH chain!\n\n");
+
+    println!("\nWelcome to the TRUTH chain!\n");
+    println!("\nBringing accountability to LLMs & AI\n");
+    println!("We are currently testing the following models:\n");
+
+    for (index, model) in AI_MODELS.iter().enumerate() {
+        println!("Agent {}: {}", index + 1, model);
+    }
+
+    println!("\n");
+}
+
+fn prompt_text() {
+    // Set text color to orange (RGB: 255, 165, 0)
+    print!("\x1B[38;2;255;165;0mEnter a transaction message (or 'exit' to quit): \x1B[0m");
+    std::io::stdout().flush().unwrap(); // Ensure the output is displayed immediately
 }
