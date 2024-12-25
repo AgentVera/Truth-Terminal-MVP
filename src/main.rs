@@ -3,6 +3,20 @@ use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use uuid::Uuid;
 
+const AI_MODELS: [&str; 10] = [
+    "GPT-3.5 (text-davinci-003)",
+    "GPT-4 (gpt-4-turbo)",
+    "Claude (Anthropic Claude-1)",
+    "Claude 2 (Anthropic Claude-2)",
+    "Llama 2 (Meta AI)",
+    "Cohere Command R",
+    "Mistral 7B",
+    "BLOOM (Hugging Face)",
+    "PaLM 2 (Google AI)",
+    "OpenAssistant (LAION)",
+];
+
+
 lazy_static::lazy_static! {
     static ref LEDGER: Mutex<Vec<Block>> = Mutex::new(Vec::new());
 }
@@ -79,40 +93,65 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let client = Client::new();
         let mut agent_responses = Vec::new();
-        for agent in 1..=3 {
+        for agent in 1..=5 {
             let response = validate_transaction(&client, &transaction, agent).await?;
             agent_responses.push(response);
         }
 
-        let consensus = form_consensus(&agent_responses);
-        let block = validate_and_add_to_chain(&transaction, &consensus).await?;
+        // Always accept the block but record the votes
+        let block = validate_and_add_to_chain(&transaction, agent_responses).await?;
 
-        println!("Consensus Result: {:?}", consensus);
         println!("Block added to ledger: {:?}", block);
 
-        println!("\nCurrent Ledger:");
-        for block in LEDGER.lock().unwrap().iter() {
-            println!("{:?}", block);
+        display_ledger();
+
+        println!("\nWould you like to ask another question or exit? (Type 'continue' or 'exit'):");
+        let mut choice = String::new();
+        std::io::stdin().read_line(&mut choice)?;
+        let choice = choice.trim().to_lowercase();
+
+        if choice == "exit" {
+            break;
+        } else if choice != "continue" {
+            println!("Invalid input. Exiting...");
+            break;
         }
     }
 
     Ok(())
 }
 
+fn display_ledger() {
+    println!("\n=== Current Ledger ===");
+    let ledger = LEDGER.lock().unwrap();
+    for (i, block) in ledger.iter().enumerate() {
+        println!(
+            "Block {}: {{ Assertion: '{}', Consensus: true }}\nVotes:\n{}",
+            i + 1,
+            block.transaction.content,
+            block.details
+        );
+    }
+    println!("=======================\n");
+}
 async fn validate_transaction(
     client: &Client,
     transaction: &Transaction,
     agent_id: usize,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    println!("Agent {} validating transaction: {:?}", agent_id, transaction);
+    let model_name = AI_MODELS[agent_id % AI_MODELS.len()];
+    println!(
+        "Agent {} ({}) validating transaction: {:?}",
+        agent_id, model_name, transaction
+    );
 
     let prompt = format!(
-        "Agent {}: Validate the following transaction: '{}'. Is it valid?",
-        agent_id, transaction.content
+        "Agent {} ({}) is validating the following transaction: '{}'. Is it valid? Respond with 'yes' or 'no'.",
+        agent_id, model_name, transaction.content
     );
 
     let request_body = serde_json::json!({
-        "model": "gpt-3.5-turbo",
+        "model": "gpt-3.5-turbo", // Using GPT-3.5 for simulation
         "messages": [
             {
                 "role": "user",
@@ -142,15 +181,14 @@ async fn validate_transaction(
         Ok(parsed_response) => {
             let result_text = match parsed_response.choices {
                 Some(choices) if !choices.is_empty() => {
-                    let content = choices[0].message.content.clone(); // Clone the content
-                    content.trim().to_string() // Create an owned String from the trimmed value
+                    let content = choices[0].message.content.clone();
+                    content.trim().to_lowercase() // Normalize response to lowercase
                 }
-                _ => "No valid choice found".to_string(),
+                _ => "no valid response".to_string(),
             };
-            
 
-            let is_valid = result_text.contains("valid");
-            println!("Agent {} validation result: {}", agent_id, is_valid);
+            let is_valid = result_text.contains("yes");
+            println!("Agent {} ({}) validation result: {}", agent_id, model_name, is_valid);
             Ok(is_valid)
         }
         Err(_) => {
@@ -165,6 +203,7 @@ async fn validate_transaction(
         }
     }
 }
+
 
 
 fn form_consensus(agent_responses: &[bool]) -> ConsensusResult {
@@ -185,69 +224,24 @@ fn form_consensus(agent_responses: &[bool]) -> ConsensusResult {
 
 async fn validate_and_add_to_chain(
     transaction: &Transaction,
-    consensus: &ConsensusResult,
+    agent_responses: Vec<bool>,
 ) -> Result<Block, Box<dyn std::error::Error>> {
-    let client = Client::new();
-    let prompt = format!(
-        "Validate the block with transaction: '{}' and consensus result: '{}'. Should it be added to the chain?",
-        transaction.content, consensus.consensus
-    );
-
-    let request_body = serde_json::json!({
-        "model": "gpt-3.5-turbo",
-        "messages": [
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        "max_tokens": 10,
-        "temperature": 0.0
-    });
-
-    let api_key = std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY environment variable not set");
-
-    let response_text = client
-        .post("https://api.openai.com/v1/chat/completions")
-        .header("Authorization", format!("Bearer {}", api_key))
-        .json(&request_body)
-        .send()
-        .await?
-        .text()
-        .await?;
-
-    println!("Raw API response: {}", response_text);
-
-    let response: Result<OpenAIResponse, serde_json::Error> = serde_json::from_str(&response_text);
-
-    match response {
-        Ok(parsed_response) => {
-            let result_text = match parsed_response.choices {
-                Some(choices) if !choices.is_empty() => {
-                    let content = choices[0].message.content.clone(); // Clone the content
-                    content.trim().to_string() // Create an owned String from the trimmed value
-                }
-                _ => "No valid choice found".to_string(),
-            };
-            
-
-            if result_text.contains("add") {
-                let block = Block {
-                    id: Uuid::new_v4().to_string(),
-                    transaction: transaction.clone(),
-                    consensus: consensus.consensus,
-                    details: consensus.details.clone(),
-                };
-
-                LEDGER.lock().unwrap().push(block.clone());
-                Ok(block)
-            } else {
-                Err("Block rejected by validation process.".into())
-            }
-        }
-        Err(_) => {
-            println!("Unexpected response format: {}", response_text);
-            Err("Unexpected OpenAI API response.".into())
-        }
+    let mut details = String::new();
+    for (i, response) in agent_responses.iter().enumerate() {
+        let vote = if *response { "yes" } else { "no" };
+        let model_name = AI_MODELS[i % AI_MODELS.len()];
+        details.push_str(&format!("Agent {} ({}): {}\n", i + 1, model_name, vote));
     }
+
+    details.push_str("Block added to ledger.\n");
+
+    let block = Block {
+        id: Uuid::new_v4().to_string(),
+        transaction: transaction.clone(),
+        consensus: true,
+        details,
+    };
+
+    LEDGER.lock().unwrap().push(block.clone());
+    Ok(block)
 }
