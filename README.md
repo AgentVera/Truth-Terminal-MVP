@@ -4,10 +4,10 @@ This is the original sourcecode for TruthChain: Community Notes for LLMs. The wa
 
 Running the code:  
 - You will need an OpenAPI key
-- You will need to add a .env file setting your key: OPENAI_API_KEY=YOUR KEY
 - Download the source, and run (in terminal) `cargo run` command
 - Create a .env in root of project and set `OPENAI_API_KEY=[YOUR KEY]`  
 
+Once you run the CLI, you will be asked to submit a question. You go multiple rounds and can poll the AIs for different questions.
 
 # SUPPORT TRUTHCHAIN
 
