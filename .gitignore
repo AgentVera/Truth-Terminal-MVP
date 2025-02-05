@@ -33,3 +33,4 @@ Cargo.lock
 # System files
 .DS_Store
 Thumbs.db
+.env
