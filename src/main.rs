@@ -1,324 +1,306 @@
+use async_trait::async_trait;
+use chrono::Utc;
+use dotenv::dotenv;
+use futures::future::join_all;
+use lazy_static::lazy_static;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
+use serde_json::json;
+use std::env;
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
-use chrono::Utc;
-use std::io::Write;
+use warp::Filter;
 
-use solana_client::rpc_client::RpcClient;
+// ======== Models / Data Structures ========
 
-const COLOR_GREEN: &str = "\x1B[32m"; // Green text
-const COLOR_RED: &str = "\x1B[31m";   // Red text
-const COLOR_RESET: &str = "\x1B[0m";  // Reset to default text color
-
-
-const AI_MODELS: [&str; 10] = [
-    "GPT-3.5 (text-davinci-003)",
-    "GPT-4 (gpt-4-turbo)",
-    "Claude (Anthropic Claude-1)",
-    "Claude 2 (Anthropic Claude-2)",
-    "Llama 2 (Meta AI)",
-    "Cohere Command R",
-    "Mistral 7B",
-    "BLOOM (Hugging Face)",
-    "PaLM 2 (Google AI)",
-    "OpenAssistant (LAION)",
-];
-
-
-lazy_static::lazy_static! {
-    static ref LEDGER: Mutex<Vec<Block>> = Mutex::new(Vec::new());
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct Transaction {
     id: String,
     content: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct Block {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Record {
     id: String,
     transaction: Transaction,
     consensus: bool,
     details: String,
-    solana_block: u64, // Add this field
+    timestamp: String,
 }
 
-
-#[derive(Debug, Serialize, Deserialize)]
-struct ConsensusResult {
-    transaction_id: String,
-    consensus: bool,
-    details: String,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AIResponse {
+    agent_name: String,
+    is_valid: bool,
 }
 
-#[derive(Debug, Deserialize)]
-struct OpenAIResponse {
-    choices: Option<Vec<Choice>>, // Handle cases where `choices` is missing
+#[derive(Deserialize)]
+struct ValidateRequest {
+    statement: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct Choice {
-    message: Message,
+#[derive(Serialize)]
+struct ValidateResponse {
+    record: Record,
+    ai_responses: Vec<AIResponse>,
 }
 
-#[derive(Debug, Deserialize)]
-struct Message {
-    role: String,
-    content: String,
+// In-memory ledger
+lazy_static! {
+    static ref LEDGER: Mutex<Vec<Record>> = Mutex::new(Vec::new());
 }
 
-#[derive(Debug, Deserialize)]
-struct ErrorResponse {
-    error: ApiError,
+// ======== Expanded LLM Models ========
+
+const AI_MODELS: [&str; 9] = [
+    "openai/gpt-4o",
+    "openai/gpt-3.5-turbo",
+    "anthropic/claude-3-haiku",
+    "google/gemini-pro",
+    "mistral/mistral-7b-instruct",
+    "meta/llama-3-70b-instruct",
+    "cohere/command-r-plus",
+    "deepseek/deepseek-coder",
+    "x/grok",
+];
+
+// ======== AI Provider Trait ========
+
+#[async_trait]
+trait AIProvider: Send + Sync {
+    async fn validate(&self, text: &str) -> Result<AIResponse, Box<dyn std::error::Error + Send + Sync>>;
 }
 
-#[derive(Debug, Deserialize)]
-struct ApiError {
-    message: String,
-    r#type: String,
-    code: Option<String>,
+// ======== OpenRouter Provider ========
+
+struct OpenRouterProvider {
+    client: Client,
+    model: String,
 }
+
+impl OpenRouterProvider {
+    fn new(model: &str) -> Self {
+        Self {
+            client: Client::new(),
+            model: model.to_string(),
+        }
+    }
+}
+
+#[async_trait]
+impl AIProvider for OpenRouterProvider {
+    async fn validate(&self, text: &str) -> Result<AIResponse, Box<dyn std::error::Error + Send + Sync>> {
+        // Use the OPENROUTER_API_KEY from your environment
+        let api_key = env::var("OPENROUTER_API_KEY")
+            .expect("OPENROUTER_API_KEY not set");
+        
+        let request_body = json!({
+            "model": self.model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": format!("Is the following statement valid? Respond ONLY with 'yes' or 'no': '{}'", text)
+                }
+            ]
+        });
+
+        let response = self.client
+            .post("https://openrouter.ai/api/v1/chat/completions")
+            .header("Authorization", format!("Bearer {}", api_key))
+            .json(&request_body)
+            .send()
+            .await?;
+        
+        let response_body: serde_json::Value = response.json().await?;
+        let reply = response_body["choices"][0]["message"]["content"]
+            .as_str()
+            .unwrap_or("no response")
+            .to_lowercase();
+
+        let is_valid = reply.contains("yes");
+        Ok(AIResponse {
+            agent_name: self.model.clone(),
+            is_valid,
+        })
+    }
+}
+
+// ======== Grok Provider ========
+
+struct GrokProvider {
+    client: Client,
+}
+
+impl GrokProvider {
+    fn new() -> Self {
+        // Note: For testing purposes, we accept invalid certificates.
+        Self {
+            client: Client::builder()
+                .timeout(std::time::Duration::from_secs(10))
+                .danger_accept_invalid_certs(true)
+                .build()
+                .unwrap(),
+        }
+    }
+}
+
+#[async_trait]
+impl AIProvider for GrokProvider {
+    async fn validate(&self, text: &str) -> Result<AIResponse, Box<dyn std::error::Error + Send + Sync>> {
+        let api_key = env::var("X_API_KEY").unwrap_or_else(|_| {
+            eprintln!("Grok API key missing or invalid. Using fallback.");
+            "dummy_key".to_string()
+        });
+
+        let request_body = json!({
+            "model": "grok-2-latest",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": format!("Is the following statement valid? Respond ONLY with 'yes' or 'no': '{}'", text)
+                }
+            ],
+            "temperature": 0.1
+        });
+
+        let response = self.client
+            .post("https://api.x.ai/v1/chat/completions")
+            .header("Authorization", format!("Bearer {}", api_key))
+            .header("X-API-Version", "2023-11-22")
+            .json(&request_body)
+            .send()
+            .await;
+
+        // If there is an error, log it and mark the response as invalid.
+        let response = match response {
+            Ok(resp) => resp,
+            Err(e) => {
+                eprintln!("Grok API error: {}", e);
+                return Ok(AIResponse {
+                    agent_name: "x/grok".to_string(),
+                    is_valid: false,
+                });
+            }
+        };
+
+        let response_body: serde_json::Value = response.json().await?;
+        let reply = response_body["choices"][0]["message"]["content"]
+            .as_str()
+            .unwrap_or("no response")
+            .to_lowercase();
+
+        let is_valid = reply.contains("yes");
+        Ok(AIResponse {
+            agent_name: "x/grok".to_string(),
+            is_valid,
+        })
+    }
+}
+
+// ======== Handler Logic ========
+
+async fn handle_validate(
+    req: ValidateRequest,
+    providers: Arc<Vec<Box<dyn AIProvider>>>,
+) -> Result<impl warp::Reply, warp::Rejection> {
+    // 1. Create a transaction
+    let transaction = Transaction {
+        id: Uuid::new_v4().to_string(),
+        content: req.statement.clone(),
+    };
+
+    // 2. Query all AI providers in parallel
+    let futures = providers.iter().map(|p| p.validate(&transaction.content));
+    let responses: Vec<AIResponse> = join_all(futures)
+        .await
+        .into_iter()
+        .filter_map(Result::ok)
+        .collect();
+
+    // 3. Build details string from responses
+    let mut details = String::new();
+    for r in &responses {
+        let vote_str = if r.is_valid { "yes" } else { "no" };
+        details.push_str(&format!("{} voted: {}\n", r.agent_name, vote_str));
+    }
+    details.push_str(&format!("\nRecorded at {}\n", Utc::now().to_rfc3339()));
+
+    // 4. Create a record and add it to our ledger
+    let record = Record {
+        id: Uuid::new_v4().to_string(),
+        transaction,
+        consensus: true,
+        details,
+        timestamp: Utc::now().to_rfc3339(),
+    };
+    {
+        let mut ledger = LEDGER.lock().unwrap();
+        ledger.push(record.clone());
+    }
+
+    // 5. Return the response as JSON
+    let response = ValidateResponse {
+        record,
+        ai_responses: responses,
+    };
+    Ok(warp::reply::json(&response))
+}
+
+fn with_providers(
+    providers: Arc<Vec<Box<dyn AIProvider>>>,
+) -> impl Filter<Extract = (Arc<Vec<Box<dyn AIProvider>>>,), Error = std::convert::Infallible> + Clone {
+    warp::any().map(move || providers.clone())
+}
+
+// A simple GET route at `/` for basic info
+fn root_handler() -> impl warp::Reply {
+    warp::reply::html("<h1>Truth Terminal MVP</h1><p>POST to /api/validate with {\"statement\":\"...\"}</p>")
+}
+
+// ======== MAIN SERVER ========
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    
-    clear_screen(); // Clear the screen
-    print_banner(); // Print the ASCII art
+    dotenv().ok();
 
-    loop {
-        prompt_text();
-
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-        let input = input.trim().to_string();
-
-        if input.to_lowercase() == "exit" {
-            break;
-        }
-
-        let transaction = Transaction {
-            id: Uuid::new_v4().to_string(),
-            content: input.clone(),
-        };
-
-        println!("User submitted transaction: {:?}", transaction);
-
-        let client = Client::new();
-        let mut agent_responses = Vec::new();
-        for agent in 1..=5 {
-            let response = validate_transaction(&client, &transaction, agent).await?;
-            agent_responses.push(response);
-        }
-
-        // Always accept the block but record the votes
-        let block = validate_and_add_to_chain(&transaction, agent_responses).await?;
-
-        println!("Block added to ledger: {:?}", block);
-
-        display_ledger();
-
-        println!("\nWould you like to ask another question or exit? (Type 'continue' or 'exit'):");
-        let mut choice = String::new();
-        std::io::stdin().read_line(&mut choice)?;
-        let choice = choice.trim().to_lowercase();
-
-        if choice == "exit" {
-            break;
-        } else if choice != "continue" {
-            println!("Invalid input. Exiting...");
-            break;
+    // Build AI providers based on our new list.
+    // Use GrokProvider if the model is "x/grok", else use OpenRouterProvider.
+    let mut ai_providers: Vec<Box<dyn AIProvider>> = Vec::new();
+    for model in AI_MODELS.iter() {
+        if *model == "x/grok" {
+            ai_providers.push(Box::new(GrokProvider::new()));
+        } else {
+            ai_providers.push(Box::new(OpenRouterProvider::new(model)));
         }
     }
+    let providers = Arc::new(ai_providers);
 
+    // Define routes
+    let root = warp::path::end().map(root_handler);
+    let validate_route = warp::path!("api" / "validate")
+        .and(warp::post())
+        .and(warp::body::json())
+        .and(with_providers(providers.clone()))
+        .and_then(handle_validate);
+
+    // Combine routes and add CORS support
+    let routes = root
+        .or(validate_route)
+        .with(
+            warp::cors()
+                .allow_any_origin()
+                .allow_header("content-type")
+                .allow_methods(vec![warp::http::Method::POST, warp::http::Method::GET])
+        );
+
+    println!("Server running on 0.0.0.0:3030");
+    warp::serve(routes).run(([0, 0, 0, 0], 3030)).await;
     Ok(())
 }
 
-fn display_ledger() {
-    println!("\n=== Current Ledger ===\n");
-    let ledger = LEDGER.lock().unwrap();
-    for (i, block) in ledger.iter().enumerate() {
-        println!(
-            "Block {}: {{ Assertion: '{}', Consensus: true }}\nVotes:\n{}",
-            i + 1,
-            block.transaction.content,
-            block.details
-        );
-    }
-    println!("=======================\n");
-}
-async fn validate_transaction(
-    client: &Client,
-    transaction: &Transaction,
-    agent_id: usize,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    let model_name = AI_MODELS[agent_id % AI_MODELS.len()];
-    println!(
-        "Agent {} ({}) validating transaction: {:?}\n",
-        agent_id, model_name, transaction
-    );
-
-    let prompt = format!(
-        "Agent {} ({}) is validating the following transaction: '{}'. Is it valid? Respond with 'yes' or 'no'.\n",
-        agent_id, model_name, transaction.content
-    );
-
-    let request_body = serde_json::json!({
-        "model": "gpt-3.5-turbo", // Using GPT-3.5 for simulation
-        "messages": [
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        "max_tokens": 10,
-        "temperature": 0.0
-    });
-
-    let api_key = std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY environment variable not set");
-
-    let response_text = client
-        .post("https://api.openai.com/v1/chat/completions")
-        .header("Authorization", format!("Bearer {}", api_key))
-        .json(&request_body)
-        .send()
-        .await?
-        .text()
-        .await?;
-
-    println!("Raw API response: {}", response_text);
-
-    let response: Result<OpenAIResponse, serde_json::Error> = serde_json::from_str(&response_text);
-
-    match response {
-        Ok(parsed_response) => {
-            let result_text = match parsed_response.choices {
-                Some(choices) if !choices.is_empty() => {
-                    let content = choices[0].message.content.clone();
-                    content.trim().to_lowercase() // Normalize response to lowercase
-                }
-                _ => "no valid response".to_string(),
-            };
-
-            let is_valid = result_text.contains("yes");
-            println!("Agent {} ({}) validation result: {}", agent_id, model_name, is_valid);
-            Ok(is_valid)
-        }
-        Err(_) => {
-            let error_response: Result<ErrorResponse, _> = serde_json::from_str(&response_text);
-            if let Ok(error) = error_response {
-                println!("API Error: {}", error.error.message);
-                Err(format!("OpenAI API error: {}", error.error.message).into())
-            } else {
-                println!("Unexpected response format: {}", response_text);
-                Err("Unexpected OpenAI API response.".into())
-            }
-        }
-    }
-}
 
 
 
-fn form_consensus(agent_responses: &[bool]) -> ConsensusResult {
-    let valid_count = agent_responses.iter().filter(|&&res| res).count();
-    let total_count = agent_responses.len();
-    let consensus_reached = valid_count > total_count / 2;
-
-    ConsensusResult {
-        transaction_id: Uuid::new_v4().to_string(),
-        consensus: consensus_reached,
-        details: if consensus_reached {
-            "Consensus reached: Transaction is valid.".to_string()
-        } else {
-            "Consensus failed: Transaction is invalid.".to_string()
-        },
-    }
-}
 
 
-async fn validate_and_add_to_chain(
-    transaction: &Transaction,
-    agent_responses: Vec<bool>,
-) -> Result<Block, Box<dyn std::error::Error>> {
-    // Solana RPC client
-    let rpc_client = RpcClient::new("https://api.mainnet-beta.solana.com");
 
-    // Fetch the current block height
-    let current_block = match rpc_client.get_slot() {
-        Ok(block) => block,
-        Err(err) => {
-            eprintln!("Error fetching Solana block: {}", err);
-            0 // Default block number if an error occurs
-        }
-    };
-
-    // Record agent responses and their associated models
-    let mut details = String::new();
-    for (i, response) in agent_responses.iter().enumerate() {
-        let vote = if *response {
-            format!("{}yes{}", COLOR_GREEN, COLOR_RESET) // Green for yes
-        } else {
-            format!("{}no{}", COLOR_RED, COLOR_RESET)   // Red for no
-        };
-        let model_name = AI_MODELS[i % AI_MODELS.len()]; // Assign model name
-        details.push_str(&format!("Agent {} ({}) voted: {}\n", i + 1, model_name, vote));
-    }
-    
-
-    // Add timestamp and block height
-    let timestamp = Utc::now();
-    details.push_str(&format!(
-        "\nThis block was added to Solana at block {} on {}.\n",
-        current_block, timestamp
-    ));
-
-    // Create the block
-    let block = Block {
-        id: Uuid::new_v4().to_string(),
-        transaction: transaction.clone(),
-        consensus: true,
-        details,
-        solana_block: current_block,
-    };
-
-    // Add block to the ledger
-    LEDGER.lock().unwrap().push(block.clone());
-    Ok(block)
-}
-
-fn clear_screen() {
-    print!("\x1B[2J\x1B[1;1H"); // ANSI escape code to clear the screen
-    std::io::stdout().flush().unwrap(); // Flush the output to ensure it is displayed immediately
-}
-
-
-fn print_banner() {
-    println!();
-    println!();
-    println!(
-        r#"
-  _______ _____  _    _ _______ _    _ 
- |__   __|  __ \| |  | |__   __| |  | |
-    | |  | |__) | |  | |  | |  | |__| |
-    | |  |  _  /| |  | |  | |  |  __  |
-    | |  | | \ \| |__| |  | |  | |  | |
-    |_|  |_|  \_\\____/   |_|  |_|  |_|"#
-    );
-
-    println!("\nWelcome to the TRUTH chain!\n");
-    println!("\nBringing accountability to LLMs & AI\n");
-    println!("We are currently testing the following models:\n");
-
-    for (index, model) in AI_MODELS.iter().enumerate() {
-        println!("Agent {}: {}", index + 1, model);
-    }
-
-    println!("\n");
-}
-
-fn prompt_text() {
-    // Set text color to orange (RGB: 255, 165, 0)
-    print!("\x1B[38;2;255;165;0mEnter a transaction message (or 'exit' to quit): \x1B[0m");
-    std::io::stdout().flush().unwrap(); // Ensure the output is displayed immediately
-}

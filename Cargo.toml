@@ -4,13 +4,45 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-solana-client = "2.1"
-solana-sdk = "2.1"
-reqwest = { version = "0.11", features = ["json"] }
-tokio = { version = "1", features = ["full"] }
+# HTTP Client and API integrations
+reqwest = { version = "0.11", features = ["json", "stream"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+
+# Async ecosystem
+tokio = { version = "1.35", features = ["full", "time", "macros"] }
+async-trait = "0.1.85"
+futures = "0.3.31"
+
+# Security and IDs
+uuid = { version = "1.8", features = ["v4", "serde"] }
+
+# Environment management
+dotenv = "0.15"
+
+# State management
+lazy_static = "1.4.0"
+
+# Logging and diagnostics
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["fmt", "env-filter", "ansi"] }
+
+# Error handling
+anyhow = "1.0.80"
+thiserror = "1.0.56"
+
+# Time handling
+chrono = { version = "0.4.39", features = ["serde"] }
+
+# CLI (optional but recommended)
+clap = { version = "4.4.18", features = ["derive", "env"] }
+
+# Rate limiting (new addition)
+tokio-util = { version = "0.7", features = ["codec"] }
+
+# API retries (new addition)
+reqwest-retry = "0.2.2"
+
+# Web server
 warp = "0.3"
-uuid = { version = "1", features = ["v4"] }
-lazy_static = "1.4"
-chrono = "0.4"
+
