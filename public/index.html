@@ -1,0 +1,1162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <!-- Meta viewport for mobile devices -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#121212" />
+  <title>Truth Terminal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    /* Reset & Enhanced Cyberpunk Variables */
+    :root {
+      --primary-teal: #00fff2;
+      --primary-teal-glow: rgba(0, 255, 242, 0.7);
+      --primary-dark: #121212;
+      --terminal-bg: rgba(0, 10, 15, 0.85);
+      --text-light: #f0f0f0;
+      
+      /* Enhanced cyberpunk color palette */
+      --answer-yes: #39ff14;         /* Electric green */
+      --answer-yes-glow: rgba(57, 255, 20, 0.7);
+      --answer-no: #ff2a6d;          /* Hot pink/red */
+      --answer-no-glow: rgba(255, 42, 109, 0.7);
+      --answer-unknown: #05d9e8;     /* Neon blue */
+      --answer-unknown-glow: rgba(5, 217, 232, 0.7);
+      --model-name: #d300c5;         /* Vibrant purple */
+      --model-name-glow: rgba(211, 0, 197, 0.7);
+      
+      --button-hover: #00ccbb;
+    }
+    
+    * {
+      margin: 0; 
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      background-color: var(--primary-dark);
+      color: var(--text-light);
+      font-family: 'IBM Plex Mono', monospace; 
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      min-height: 100vh;
+      padding: 0;
+      position: relative;
+      overflow-x: hidden;
+    }
+    
+    /* Matrix Canvas - ensure it's behind everything */
+    #matrix-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: -10; /* Lower z-index to ensure it's behind everything */
+      opacity: 0.8;
+    }
+    
+    /* Main Container - ensure it's above the matrix */
+    .container {
+      width: 100%;
+      max-width: 1200px;
+      padding: 2rem;
+      margin-top: 2rem;
+      z-index: 10; /* Higher z-index to ensure it's above the matrix */
+      position: relative; /* Needed for z-index to work */
+    }
+    
+    /* Header Section */
+    .header {
+      text-align: center;
+      margin-bottom: 3rem;
+      position: relative;
+      z-index: 10; /* Ensure it's above the matrix */
+    }
+    
+    .header h1 {
+      font-size: 3.5rem;
+      font-weight: 600;
+      letter-spacing: -1px;
+      margin-bottom: 1rem;
+      background: linear-gradient(90deg, var(--primary-teal), white);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      text-shadow: 0 0 15px var(--primary-teal-glow);
+      position: relative;
+      display: inline-block;
+    }
+    
+    .header h1::after {
+      content: '';
+      position: absolute;
+      bottom: -10px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 30%;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--primary-teal), transparent);
+      box-shadow: 0 0 10px var(--primary-teal-glow);
+    }
+    
+    .description {
+      font-size: 1.1rem;
+      max-width: 800px;
+      margin: 0 auto;
+      line-height: 1.6;
+      color: rgba(255, 255, 255, 0.9);
+      padding: 1rem;
+      border-radius: 8px;
+      background: rgba(0, 255, 242, 0.03);
+      border: 1px solid rgba(0, 255, 242, 0.1);
+    }
+    
+    .description strong {
+      color: var(--primary-teal);
+      font-weight: 600;
+    }
+    
+    /* Main Terminal */
+    .terminal-container {
+      width: 100%;
+      height: 400px;
+      margin: 2rem auto;
+      position: relative;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 
+        0 0 30px rgba(0, 255, 242, 0.3),
+        0 0 50px rgba(0, 0, 0, 0.5);
+    }
+    
+    .terminal-header {
+      background: rgba(0, 30, 40, 0.9);
+      padding: 0.8rem 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(0, 255, 242, 0.3);
+    }
+    
+    .terminal-title {
+      color: var(--primary-teal);
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+    
+    .terminal-controls {
+      display: flex;
+      gap: 0.5rem;
+    }
+    
+    .terminal-control {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--primary-teal);
+      opacity: 0.5;
+      transition: opacity 0.2s;
+    }
+    
+    .terminal-control:hover {
+      opacity: 0.8;
+    }
+    
+    .terminal {
+      height: calc(100% - 40px);
+      background: rgba(0, 10, 15, 0.92);
+      padding: 1rem;
+      overflow-y: auto;
+      font-size: 1rem;
+      line-height: 1.5;
+      color: var(--text-light);
+      position: relative;
+      text-shadow: 0 0 1px rgba(255, 255, 255, 0.5);
+    }
+    
+    .terminal::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        rgba(0, 0, 0, 0.15),
+        rgba(0, 0, 0, 0.15) 1px,
+        transparent 1px,
+        transparent 2px
+      );
+      pointer-events: none;
+      opacity: 0.2;
+    }
+    
+    .terminal::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: radial-gradient(
+        circle at center,
+        transparent 50%,
+        rgba(0, 0, 0, 0.4) 100%
+      );
+      pointer-events: none;
+    }
+    
+    /* Enhanced terminal text styling */
+    .prompt-line {
+      color: var(--primary-teal);
+      margin-bottom: 0.5rem;
+      text-shadow: 0 0 10px var(--primary-teal-glow);
+      font-weight: 500;
+    }
+    
+    /* Model name styling - purple */
+    .model-name {
+      color: var(--model-name);
+      font-weight: 600;
+      text-shadow: 0 0 8px var(--model-name-glow);
+    }
+    
+    /* Yes responses - electric green */
+    .log-line-yes {
+      color: var(--answer-yes);
+      text-shadow: 0 0 8px var(--answer-yes-glow);
+    }
+    
+    /* No responses - hot pink/red */
+    .log-line-no {
+      color: var(--answer-no);
+      text-shadow: 0 0 8px var(--answer-no-glow);
+    }
+    
+    /* Unknown responses - neon blue */
+    .log-line-unknown {
+      color: var(--answer-unknown);
+      text-shadow: 0 0 8px var(--answer-unknown-glow);
+    }
+    
+    /* Default log line */
+    .log-line-default {
+      color: var(--text-light);
+    }
+    
+    /* Section headers */
+    .section-header {
+      color: var(--primary-teal);
+      text-shadow: 0 0 10px var(--primary-teal-glow);
+      font-weight: 600;
+      margin: 10px 0;
+      padding-top: 5px;
+      border-top: 1px solid rgba(0, 255, 242, 0.3);
+    }
+    
+    /* Input Area */
+    .input-container {
+      width: 100%;
+      margin-top: 2rem;
+    }
+    
+    .input-row {
+      display: flex;
+      width: 100%;
+      position: relative;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+    }
+    
+    .input-row::before {
+      content: '';
+      position: absolute;
+      top: -1px;
+      left: -1px;
+      right: -1px;
+      bottom: -1px;
+      background: linear-gradient(45deg, var(--primary-teal), transparent 60%);
+      z-index: -1;
+      border-radius: 8px;
+    }
+    
+    .input-row input {
+      flex: 1;
+      padding: 1rem 1.2rem;
+      font-family: 'IBM Plex Mono', monospace;
+      border: none;
+      background-color: rgba(0, 20, 30, 0.9);
+      color: var(--text-light);
+      font-size: 1rem;
+      outline: none;
+      transition: all 0.3s ease;
+    }
+    
+    .input-row input:focus {
+      background-color: rgba(0, 30, 40, 0.9);
+      box-shadow: 0 0 10px rgba(0, 255, 242, 0.3) inset;
+    }
+    
+    .input-row button {
+      padding: 0 1.5rem;
+      border: none;
+      background-color: var(--primary-teal);
+      color: rgba(0, 20, 30, 1);
+      cursor: pointer;
+      font-family: 'IBM Plex Mono', monospace;
+      font-weight: 600;
+      font-size: 1rem;
+      transition: all 0.3s ease;
+    }
+    
+    .input-row button:hover {
+      background-color: var(--button-hover);
+      box-shadow: 0 0 15px rgba(0, 255, 242, 0.5);
+    }
+    
+    /* Side Panel */
+    #side-panel {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 400px;
+      height: 100vh;
+      background-color: rgba(0, 15, 20, 0.95);
+      border-left: 1px solid rgba(0, 255, 242, 0.3);
+      padding: 2rem 1.5rem;
+      overflow-y: auto;
+      transform: translateX(100%);
+      transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: -5px 0 25px rgba(0, 0, 0, 0.5);
+      z-index: 100;
+    }
+    
+    #side-panel.open {
+      transform: translateX(0);
+    }
+    
+    #side-panel h2 {
+      color: var(--primary-teal);
+      margin-bottom: 1.5rem;
+      font-size: 1.5rem;
+      position: relative;
+      display: inline-block;
+    }
+    
+    #side-panel h2::after {
+      content: '';
+      position: absolute;
+      bottom: -8px;
+      left: 0;
+      width: 100%;
+      height: 1px;
+      background: linear-gradient(90deg, var(--primary-teal), transparent);
+    }
+    
+    .disclaimer-entry {
+      margin-bottom: 1.5rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid rgba(0, 255, 242, 0.1);
+    }
+    
+    /* Enhanced side panel styling */
+    #side-panel .disclaimer-entry strong {
+      color: var(--model-name);
+      text-shadow: 0 0 8px var(--model-name-glow);
+      display: block;
+      margin-bottom: 0.5rem;
+      font-size: 1.1rem;
+    }
+    
+    .toggle-panel-btn {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background-color: rgba(0, 20, 30, 0.8);
+      color: var(--primary-teal);
+      border: 1px solid var(--primary-teal);
+      padding: 0.7rem 1.2rem;
+      cursor: pointer;
+      border-radius: 6px;
+      font-family: 'IBM Plex Mono', monospace;
+      z-index: 101;
+      transition: all 0.3s ease;
+      backdrop-filter: blur(5px);
+    }
+    
+    .toggle-panel-btn:hover {
+      background-color: rgba(0, 255, 242, 0.2);
+      box-shadow: 0 0 15px rgba(0, 255, 242, 0.4);
+    }
+    
+    /* Footer */
+    .footer {
+      width: 100%;
+      text-align: center;
+      padding: 1rem;
+      margin-top: 2rem;
+      font-size: 0.8rem;
+      color: rgba(255, 255, 255, 0.5);
+    }
+    
+    /* Loading Animation */
+    .loading-indicator {
+      display: inline-block;
+      position: relative;
+      width: 80px;
+      height: 13px;
+    }
+    .loading-indicator div {
+      position: absolute;
+      top: 0;
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      background: var(--primary-teal);
+      animation-timing-function: cubic-bezier(0, 1, 1, 0);
+    }
+    .loading-indicator div:nth-child(1) {
+      left: 8px;
+      animation: loading1 0.6s infinite;
+    }
+    .loading-indicator div:nth-child(2) {
+      left: 8px;
+      animation: loading2 0.6s infinite;
+    }
+    .loading-indicator div:nth-child(3) {
+      left: 32px;
+      animation: loading2 0.6s infinite;
+    }
+    .loading-indicator div:nth-child(4) {
+      left: 56px;
+      animation: loading3 0.6s infinite;
+    }
+    @keyframes loading1 {
+      0% { transform: scale(0); }
+      100% { transform: scale(1); }
+    }
+    @keyframes loading3 {
+      0% { transform: scale(1); }
+      100% { transform: scale(0); }
+    }
+    @keyframes loading2 {
+      0% { transform: translate(0, 0); }
+      100% { transform: translate(24px, 0); }
+    }
+    
+    /* Style the full responses in the side panel */
+    #side-panel .log-line-yes {
+      background: rgba(57, 255, 20, 0.1);
+      padding: 10px;
+      border-radius: 6px;
+      border-left: 3px solid var(--answer-yes);
+    }
+    
+    #side-panel .log-line-no {
+      background: rgba(255, 42, 109, 0.1);
+      padding: 10px;
+      border-radius: 6px;
+      border-left: 3px solid var(--answer-no);
+    }
+    
+    #side-panel .log-line-unknown {
+      background: rgba(5, 217, 232, 0.1);
+      padding: 10px;
+      border-radius: 6px;
+      border-left: 3px solid var(--answer-unknown);
+    }
+    
+    /* Improved mobile responsiveness */
+    @media (max-width: 768px) {
+      .container {
+        padding: 1rem;
+        margin-top: 1rem;
+      }
+      
+      .header h1 {
+        font-size: 2.5rem;
+      }
+      
+      .description {
+        font-size: 1rem;
+        padding: 0.8rem;
+      }
+      
+      .terminal-container {
+        height: 350px;
+        margin: 1.5rem auto;
+      }
+      
+      #side-panel, #alpha-panel {
+        width: 300px;
+      }
+      
+      .toggle-panel-btn, .toggle-alpha-btn {
+        padding: 0.6rem 1rem;
+      }
+    }
+    
+    @media (max-width: 480px) {
+      .header h1 {
+        font-size: 2rem;
+      }
+      
+      .description {
+        font-size: 0.9rem;
+        padding: 0.7rem;
+      }
+      
+      .terminal-container {
+        height: 300px;
+        margin: 1rem auto;
+      }
+      
+      .terminal {
+        font-size: 0.9rem;
+        padding: 0.8rem;
+      }
+      
+      .input-row {
+        flex-direction: column;
+      }
+      
+      .input-row input {
+        border-radius: 8px 8px 0 0;
+        padding: 0.8rem 1rem;
+      }
+      
+      .input-row button {
+        border-radius: 0 0 8px 8px;
+        padding: 0.8rem;
+        width: 100%;
+      }
+      
+      #side-panel, #alpha-panel {
+        width: 100%;
+      }
+      
+      .toggle-panel-btn {
+        top: 10px;
+        right: 10px;
+        padding: 0.5rem;
+        font-size: 0.8rem;
+      }
+      
+      .toggle-alpha-btn {
+        top: 10px;
+        left: 10px;
+        padding: 0.5rem;
+        font-size: 0.8rem;
+      }
+      
+      /* Prevent panels from being open simultaneously on small screens */
+      #side-panel.open ~ #alpha-panel.open {
+        transform: translateX(-100%);
+      }
+    }
+    
+    /* Small phone optimization */
+    @media (max-width: 360px) {
+      .header h1 {
+        font-size: 1.8rem;
+      }
+      
+      .terminal-container {
+        height: 250px;
+      }
+      
+      .terminal {
+        font-size: 0.8rem;
+      }
+    }
+    
+    /* Fix for landscape orientation on mobile */
+    @media (max-height: 500px) and (orientation: landscape) {
+      .header {
+        margin-bottom: 1rem;
+      }
+      
+      .header h1 {
+        font-size: 2rem;
+      }
+      
+      .description {
+        max-width: 600px;
+      }
+      
+      .terminal-container {
+        height: 200px;
+      }
+    }
+    
+    /* Ensure touch targets are large enough */
+    .toggle-panel-btn, .toggle-alpha-btn, .input-row button {
+      min-height: 44px; /* Apple's recommended minimum touch target size */
+    }
+    
+    /* Prevent text from being too small */
+    html {
+      -webkit-text-size-adjust: 100%; /* Prevent iOS text size adjust after orientation change */
+    }
+    
+    /* Response indicators in the description */
+    .yes-indicator {
+      color: var(--answer-yes);
+      font-weight: bold;
+      text-shadow: 0 0 5px var(--answer-yes-glow);
+    }
+    
+    .no-indicator {
+      color: var(--answer-no);
+      font-weight: bold;
+      text-shadow: 0 0 5px var(--answer-no-glow);
+    }
+    
+    .unknown-indicator {
+      color: var(--answer-unknown);
+      font-weight: bold;
+      text-shadow: 0 0 5px var(--answer-unknown-glow);
+    }
+    
+    /* Alpha Leak Panel */
+    #alpha-panel {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 400px;
+      height: 100vh;
+      background-color: rgba(0, 15, 20, 0.95);
+      border-right: 1px solid rgba(0, 255, 242, 0.3);
+      padding: 2rem 1.5rem;
+      overflow-y: auto;
+      transform: translateX(-100%);
+      transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 5px 0 25px rgba(0, 0, 0, 0.5);
+      z-index: 100;
+    }
+    
+    #alpha-panel.open {
+      transform: translateX(0);
+    }
+    
+    #alpha-panel h2 {
+      color: #ff2a6d;
+      margin-top: 2.5rem;
+      margin-bottom: 2rem;
+      font-size: 1.5rem;
+      position: relative;
+      display: inline-block;
+    }
+    
+    #alpha-panel h2::after {
+      content: '';
+      position: absolute;
+      bottom: -8px;
+      left: 0;
+      width: 100%;
+      height: 1px;
+      background: linear-gradient(90deg, #ff2a6d, transparent);
+    }
+    
+    .leak-entry {
+      margin-bottom: 1.5rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid rgba(255, 42, 109, 0.1);
+      position: relative;
+      padding-right: 60px;
+    }
+    
+    .leak-headline {
+      color: #f0f0f0;
+      font-weight: 600;
+      font-size: 1.1rem;
+      text-decoration: none;
+      display: block;
+      margin-bottom: 0.5rem;
+      transition: color 0.2s;
+      line-height: 1.4;
+      word-wrap: break-word;
+    }
+    
+    .leak-headline:hover {
+      color: #ff2a6d;
+      text-shadow: 0 0 8px rgba(255, 42, 109, 0.7);
+    }
+    
+    .leak-timestamp {
+      font-size: 0.8rem;
+      color: rgba(255, 255, 255, 0.5);
+      position: absolute;
+      top: 0;
+      right: 0;
+    }
+    
+    /* Alpha Leak Toggle Button */
+    .toggle-alpha-btn {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      background-color: rgba(0, 20, 30, 0.8);
+      color: #ff2a6d;
+      border: 1px solid #ff2a6d;
+      padding: 0.7rem 1.2rem;
+      cursor: pointer;
+      border-radius: 6px;
+      font-family: 'IBM Plex Mono', monospace;
+      z-index: 101;
+      transition: all 0.3s ease;
+      backdrop-filter: blur(5px);
+    }
+    
+    .toggle-alpha-btn:hover {
+      background-color: rgba(255, 42, 109, 0.2);
+      box-shadow: 0 0 15px rgba(255, 42, 109, 0.4);
+    }
+    
+    /* Add a "NEW" badge for fresh leaks */
+    .leak-entry:first-child .leak-headline::after {
+      content: 'NEW';
+      background-color: #ff2a6d;
+      color: #000;
+      font-size: 0.7rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-left: 8px;
+      font-weight: bold;
+      animation: pulse 1.5s infinite;
+    }
+    
+    @keyframes pulse {
+      0% { opacity: 0.7; }
+      50% { opacity: 1; }
+      100% { opacity: 0.7; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Matrix Canvas -->
+  <canvas id="matrix-canvas"></canvas>
+  
+  <!-- Main Container -->
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <h1>Truth Terminal</h1>
+      <div class="description">
+        Ask a question or provide a statement below. Multiple AI models will respond with 
+        "<span class="yes-indicator">yes</span>", 
+        "<span class="no-indicator">no</span>", or 
+        "<span class="unknown-indicator">unknown</span>," 
+        and results are recorded in our in-memory ledger.<br/>
+        Toggle the side panel to see the full disclaimers or extended text from each AI.
+      </div>
+    </div>
+    
+    <!-- Terminal Container -->
+    <div class="terminal-container">
+      <div class="terminal-header">
+        <div class="terminal-title">TruthChain Terminal v1.0</div>
+        <div class="terminal-controls">
+          <div class="terminal-control"></div>
+          <div class="terminal-control"></div>
+          <div class="terminal-control"></div>
+        </div>
+      </div>
+      <div id="terminal" class="terminal"></div>
+    </div>
+    
+    <!-- Input Row -->
+    <div class="input-row">
+      <input type="text" id="statement-input" placeholder="Type your statement/question here..." />
+      <button id="submit-btn">Submit</button>
+    </div>
+    
+    <!-- Footer -->
+    <div class="footer">
+      &copy; 2025 - Truth Terminal MVP
+    </div>
+  </div>
+  
+  <!-- Toggle Button for Side Panel -->
+  <button id="toggle-panel-btn" class="toggle-panel-btn">Show Explanations</button>
+  
+  <!-- Side Panel -->
+  <div id="side-panel">
+    <h2>Full Responses</h2>
+    <div id="disclaimers-list"></div>
+  </div>
+  
+  <!-- Add Alpha Leak Panel Button -->
+  <button id="toggle-alpha-btn" class="toggle-alpha-btn">Alpha Leaks</button>
+  
+  <!-- Alpha Leak Panel -->
+  <div id="alpha-panel">
+    <h2>Alpha Leaks</h2>
+    <div id="alpha-leaks-list">
+      <div class="leak-entry">
+        <a href="https://www.lowyinstitute.org/the-interpreter/donald-trump-crypto-capital-planet" target="_blank" class="leak-headline">Trump's Vision: U.S. as Crypto Capital</a>
+        <span class="leak-timestamp">2h ago</span>
+      </div>
+      <div class="leak-entry">
+        <a href="https://www.coindesk.com/price/bitcoin" target="_blank" class="leak-headline">Bitcoin Falls Below $90K: Investors Panic</a>
+        <span class="leak-timestamp">4h ago</span>
+      </div>
+      <div class="leak-entry">
+        <a href="https://www.bloomberg.com/news/articles/2025-02-21/bybit-says-exchange-wallet-hacked-1-5-billion-estimated-loss" target="_blank" class="leak-headline">Crypto Heist Horror: Bybit Loses $1.5B</a>
+        <span class="leak-timestamp">6h ago</span>
+      </div>
+      <div class="leak-entry">
+        <a href="https://www.forbes.com/sites/digital-assets/2025/02/02/this-needs-to-stop-now-elon-musk-confirms-radical-doge-us-treasury-plan/" target="_blank" class="leak-headline">Blockchain in Treasury: Musk's Bold Move</a>
+        <span class="leak-timestamp">12h ago</span>
+      </div>
+      <div class="leak-entry">
+        <a href="https://www.sec.gov/newsroom/press-releases/2025-30" target="_blank" class="leak-headline">SEC's Crypto Clarity: Task Force to Define Rules</a>
+        <span class="leak-timestamp">1d ago</span>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    // Terminal logic
+    const terminal = document.getElementById("terminal");
+    const inputField = document.getElementById("statement-input");
+    const submitBtn = document.getElementById("submit-btn");
+    // Side panel elements
+    const sidePanel = document.getElementById("side-panel");
+    const togglePanelBtn = document.getElementById("toggle-panel-btn");
+    const disclaimersList = document.getElementById("disclaimers-list");
+    
+    // Adjust this to your local or remote server
+    const SERVER_URL = "https://truthterminalmvp-production.up.railway.app/api/validate";
+    
+    // Function to append text to terminal with enhanced styling
+    function appendTerminalLine(text, className = "log-line-default") {
+      const line = document.createElement('div');
+      line.className = className;
+      
+      // Special handling for AI responses to colorize the model name
+      if (text.includes(" => ")) {
+        const parts = text.split(" => ");
+        const modelSpan = document.createElement('span');
+        modelSpan.className = 'model-name';
+        modelSpan.textContent = parts[0];
+        
+        line.appendChild(modelSpan);
+        line.appendChild(document.createTextNode(" => "));
+        
+        const responseSpan = document.createElement('span');
+        responseSpan.textContent = parts[1];
+        responseSpan.className = className;
+        line.appendChild(responseSpan);
+      } else if (text.startsWith("--- ") && text.endsWith(" ---")) {
+        // Section headers
+        line.className = 'section-header';
+        line.textContent = text;
+      } else {
+        line.textContent = text;
+      }
+      
+      terminal.appendChild(line);
+      terminal.scrollTop = terminal.scrollHeight;
+    }
+    
+    // Function to add disclaimer to side panel with enhanced styling
+    function appendDisclaimer(agentName, fullText, colorClass) {
+      const entry = document.createElement('div');
+      entry.className = 'disclaimer-entry';
+      
+      const nameSpan = document.createElement('strong');
+      nameSpan.innerText = agentName;
+      entry.appendChild(nameSpan);
+      
+      const textSpan = document.createElement('div');
+      textSpan.innerText = fullText;
+      textSpan.classList.add(colorClass);
+      entry.appendChild(textSpan);
+      disclaimersList.appendChild(entry);
+    }
+    
+    // Toggle the side panel open/closed
+    togglePanelBtn.addEventListener("click", () => {
+      sidePanel.classList.toggle("open");
+      togglePanelBtn.innerText = sidePanel.classList.contains("open")
+        ? "Hide Explanations"
+        : "Show Explanations";
+    });
+    
+    async function handleSubmit() {
+      const statement = inputField.value.trim();
+      if (!statement) {
+        appendTerminalLine("Please enter a statement!", "log-line-default");
+        return;
+      }
+      inputField.value = "";
+      // Clear previous disclaimers
+      disclaimersList.innerHTML = "";
+      appendTerminalLine(`> ${statement}`, "prompt-line");
+      
+      // Show loading indicator
+      const loadingLine = document.createElement('div');
+      loadingLine.className = 'log-line-default';
+      const loadingIndicator = document.createElement('div');
+      loadingIndicator.className = 'loading-indicator';
+      for (let i = 0; i < 4; i++) {
+        loadingIndicator.appendChild(document.createElement('div'));
+      }
+      loadingLine.appendChild(loadingIndicator);
+      terminal.appendChild(loadingLine);
+      
+      try {
+        const response = await fetch(SERVER_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ statement })
+        });
+        
+        // Remove loading indicator
+        terminal.removeChild(loadingLine);
+        
+        if (!response.ok) {
+          throw new Error(`Server error: ${response.status}`);
+        }
+        
+        // Check if the response is JSON before parsing
+        const contentType = response.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          throw new Error("Server returned non-JSON response. The API might be unavailable.");
+        }
+        
+        const data = await response.json();
+        appendTerminalLine("--- AI Responses ---");
+        
+        if (!data.ai_responses || !Array.isArray(data.ai_responses)) {
+          throw new Error("Invalid response format from server");
+        }
+        
+        data.ai_responses.forEach((resp) => {
+          const { agent_name, raw_response, is_valid } = resp;
+          let verdict = is_valid ? "Yes" : "No";
+          if (raw_response.trim().toLowerCase().startsWith("unknown")) {
+            verdict = "unknown";
+          }
+          
+          // Use the enhanced styling for responses
+          if (verdict === "Yes") {
+            appendTerminalLine(`${agent_name} => yes`, "log-line-yes");
+          } else if (verdict === "unknown") {
+            appendTerminalLine(`${agent_name} => unknown`, "log-line-unknown");
+          } else {
+            appendTerminalLine(`${agent_name} => no`, "log-line-no");
+          }
+          
+          // Determine color class for the full response
+          let colorClass = "log-line-default";
+          if (raw_response.trim().toLowerCase().startsWith("yes")) {
+            colorClass = "log-line-yes";
+          } else if (raw_response.trim().toLowerCase().startsWith("no")) {
+            colorClass = "log-line-no";
+          } else if (raw_response.trim().toLowerCase().startsWith("unknown")) {
+            colorClass = "log-line-unknown";
+          }
+          
+          appendDisclaimer(agent_name, raw_response, colorClass);
+        });
+        appendTerminalLine("--- End of responses ---\n", "log-line-default");
+      } catch (err) {
+        // Remove loading indicator if still present
+        if (terminal.contains(loadingLine)) {
+          terminal.removeChild(loadingLine);
+        }
+        console.error(err);
+        appendTerminalLine(`Error: ${err.message}`, "log-line-no");
+        
+        // Add a fallback message for better user experience
+        appendTerminalLine("The Truth Terminal API might be temporarily unavailable. Please try again later.", "log-line-default");
+        
+        // Add demo mode option
+        appendTerminalLine("\nWould you like to see a demo response instead?", "log-line-default");
+        
+        const demoButton = document.createElement('button');
+        demoButton.innerText = "Show Demo Response";
+        demoButton.className = "demo-button";
+        demoButton.style.marginTop = "10px";
+        demoButton.style.padding = "8px 16px";
+        demoButton.style.background = "rgba(0, 255, 242, 0.2)";
+        demoButton.style.border = "1px solid var(--primary-teal)";
+        demoButton.style.borderRadius = "4px";
+        demoButton.style.color = "var(--primary-teal)";
+        demoButton.style.cursor = "pointer";
+        
+        demoButton.onclick = function() {
+          // Show demo responses
+          appendTerminalLine("--- Demo AI Responses ---");
+          
+          const demoResponses = [
+            { agent_name: "Claude", raw_response: "Yes, that statement is accurate based on current information.", is_valid: true },
+            { agent_name: "GPT-4", raw_response: "Yes, I can confirm this is correct.", is_valid: true },
+            { agent_name: "Llama", raw_response: "No, this statement contains inaccuracies.", is_valid: false }
+          ];
+          
+          demoResponses.forEach(resp => {
+            const { agent_name, raw_response, is_valid } = resp;
+            if (is_valid) {
+              appendTerminalLine(`${agent_name} => yes`, "log-line-yes");
+            } else {
+              appendTerminalLine(`${agent_name} => no`, "log-line-no");
+            }
+            
+            let colorClass = is_valid ? "log-line-yes" : "log-line-no";
+            appendDisclaimer(agent_name, raw_response, colorClass);
+          });
+          
+          appendTerminalLine("--- End of demo responses ---\n", "log-line-default");
+          appendTerminalLine("Note: These are simulated responses for demonstration purposes.", "log-line-default");
+          
+          // Remove the demo button after use
+          this.remove();
+        };
+        
+        terminal.appendChild(demoButton);
+      }
+    }
+    
+    submitBtn.addEventListener("click", handleSubmit);
+    inputField.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        handleSubmit();
+      }
+    });
+    
+    // Initialize terminal with welcome message
+    appendTerminalLine(">>> Truth Terminal v1.0 loaded. Dark mode engaged.");
+    appendTerminalLine(">>> Type a statement and press Enter or 'Submit'.\n");
+    
+    // Focus the input field on load
+    inputField.focus();
+  </script>
+  
+  <!-- Matrix Animation Script -->
+  <script>
+    // Matrix code with teal color
+    const canvas = document.getElementById('matrix-canvas');
+    const ctx = canvas.getContext('2d');
+    
+    // Set canvas dimensions
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    
+    // Matrix-style characters instead of binary
+    const chars = "アカサタナハマヤラワガザダバパイキシチニヒミリヰギジヂビピウクスツヌフムユルグズヅブプエケセテネヘメレヱゲゼデベペオコソトノホモヨロヲゴゾドボポ0123456789";
+    const charArray = chars.split('');
+    
+    // Column settings
+    const fontSize = 14;
+    const columns = Math.floor(canvas.width / fontSize);
+    
+    // Drops - one per column
+    const drops = [];
+    for (let i = 0; i < columns; i++) {
+      drops[i] = Math.floor(Math.random() * -canvas.height);
+    }
+    
+    // Drawing the characters
+    function draw() {
+      // Black BG with reduced opacity for less haziness
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.03)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // Loop over drops
+      for (let i = 0; i < drops.length; i++) {
+        // Only draw some columns for a sparser effect
+        if (Math.random() > 0.1) {
+          // Random character
+          const text = charArray[Math.floor(Math.random() * charArray.length)];
+          
+          // Vary the color slightly for a more dynamic effect
+          const alpha = Math.random() * 0.5 + 0.5;
+          ctx.fillStyle = `rgba(0, 255, 242, ${alpha})`;
+          
+          ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+        }
+        
+        // Sending the drop back to the top randomly after it crosses the screen
+        if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+          drops[i] = 0;
+        }
+        
+        // Incrementing Y coordinate
+        drops[i]++;
+      }
+    }
+    
+    // Animation loop
+    setInterval(draw, 33);
+  </script>
+  
+  <!-- Add JavaScript for Alpha Leak Panel -->
+  <script>
+    // Alpha panel elements
+    const alphaPanel = document.getElementById("alpha-panel");
+    const toggleAlphaBtn = document.getElementById("toggle-alpha-btn");
+    
+    // Toggle the alpha panel open/closed
+    toggleAlphaBtn.addEventListener("click", () => {
+      alphaPanel.classList.toggle("open");
+      toggleAlphaBtn.innerText = alphaPanel.classList.contains("open")
+        ? "Hide Leaks"
+        : "Alpha Leaks";
+    });
+  </script>
+  
+  <!-- Add this script to handle mobile-specific interactions -->
+  <script>
+    // Handle mobile-specific panel behavior
+    function setupMobilePanels() {
+      const sidePanel = document.getElementById("side-panel");
+      const alphaPanel = document.getElementById("alpha-panel");
+      const togglePanelBtn = document.getElementById("toggle-panel-btn");
+      const toggleAlphaBtn = document.getElementById("toggle-alpha-btn");
+      
+      // On small screens, close one panel when opening the other
+      if (window.innerWidth <= 480) {
+        togglePanelBtn.addEventListener("click", () => {
+          if (sidePanel.classList.contains("open") && alphaPanel.classList.contains("open")) {
+            alphaPanel.classList.remove("open");
+            toggleAlphaBtn.innerText = "Alpha Leaks";
+          }
+        });
+        
+        toggleAlphaBtn.addEventListener("click", () => {
+          if (alphaPanel.classList.contains("open") && sidePanel.classList.contains("open")) {
+            sidePanel.classList.remove("open");
+            togglePanelBtn.innerText = "Show Explanations";
+          }
+        });
+      }
+    }
+    
+    // Call this function after the DOM is loaded
+    document.addEventListener("DOMContentLoaded", setupMobilePanels);
+    
+    // Also handle orientation changes
+    window.addEventListener("resize", setupMobilePanels);
+  </script>
+</body>
+</html>
+
+
